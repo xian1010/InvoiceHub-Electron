@@ -54,3 +54,4 @@ publish:
   provider: github
   owner: xian1010
   repo: InvoiceHub-Electron
+  releaseType: release
