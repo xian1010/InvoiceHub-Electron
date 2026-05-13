@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+out/
+.vite/
+
+# Generated PDFs
+Exports/
+
+# SQLite database files
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.*
+
+# Python cache
+__pycache__/
+*.pyc
+*.spec
+
+# Compiled Python executables
+resources/bin/*.exe
+
+# Temp files
+result.txt

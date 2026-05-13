@@ -1,0 +1,50 @@
+appId: com.ysunique.invoicehub
+productName: InvoiceHub
+copyright: Copyright © 2025 YS Unique Trading
+
+# Output installer to dist/
+directories:
+  output: dist
+  buildResources: build
+
+# What gets put into the installer ───────────────────────────
+files:
+  - out/**/*
+
+# Extra resources bundled alongside the app ──────────────────
+# These end up in  process.resourcesPath  at runtime
+extraResources:
+  # Python EXEs compiled by PyInstaller
+  - from: resources/bin/pdf_invoice.exe
+    to: bin/pdf_invoice.exe
+  - from: resources/bin/pdf_quotation.exe
+    to: bin/pdf_quotation.exe
+  - from: resources/bin/pdf_statement.exe
+    to: bin/pdf_statement.exe
+  # Seed SQLite database (first-run bootstrap)
+  - from: resources/invoice.db
+    to: invoice.db
+
+# Windows NSIS installer settings ────────────────────────────
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: InvoiceHub
+
+# Rebuild native modules (better-sqlite3) for the bundled Electron
+npmRebuild: true
+
+# Publish to GitHub Releases for auto-update
+publish:
+  provider: github
+  owner: xian1010
+  repo: InvoiceHub-Electron
