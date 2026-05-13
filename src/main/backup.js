@@ -1,16 +1,17 @@
 /**
  * backup.js — Auto-backup utility for InvoiceHub
  *
- * On every app start (production only), copies the live invoice.db into a
+ * When the app is closing (production only), copies the live invoice.db into a
  * sibling folder next to the installation directory:
  *
  *   <installDir>/../Invoice_Backups/invoice_backup_YYYY-MM-DD.db
  *
- * Only one backup per calendar day is kept. Backups older than 7 days are
- * automatically pruned so the folder doesn't grow infinitely.
+ * Only one backup per calendar day is kept — if the file already exists it is
+ * overwritten with the latest data. Backups older than 7 days are automatically
+ * pruned so the folder doesn't grow infinitely.
  *
  * This function is intentionally fire-and-forget — it logs but never throws,
- * so a backup failure can never prevent the app from starting.
+ * so a backup failure can never prevent the app from quitting cleanly.
  */
 
 import path from 'path'
@@ -24,8 +25,9 @@ const BACKUP_PREFIX = 'invoice_backup_'
 const BACKUP_EXT = '.db'
 
 /**
- * Run the daily auto-backup.
- * Call this once from app.whenReady() — after the DB is initialised.
+ * Run the auto-backup — copies the current DB and prunes old backups.
+ * Call this from `will-quit` or `window-all-closed` so the latest
+ * user data is always captured.
  */
 export function runAutoBackup() {
   // Skip in dev mode — the dev DB is right next to the source
@@ -51,21 +53,15 @@ export function runAutoBackup() {
       console.log('[backup] Created backup folder:', backupDir)
     }
 
-    // 3. Build today's backup filename
-    const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+    // 3. Build today's backup filename using LOCAL time
+    //    toLocaleDateString('en-CA') returns 'YYYY-MM-DD' in local timezone
+    const today = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD (local)
     const backupName = `${BACKUP_PREFIX}${today}${BACKUP_EXT}`
     const backupPath = path.join(backupDir, backupName)
 
-    // If today's backup already exists, skip (one backup per day)
-    if (fs.existsSync(backupPath)) {
-      console.log('[backup] Today\'s backup already exists:', backupName)
-      cleanOldBackups(backupDir)
-      return
-    }
-
-    // 4. Copy the database
+    // 4. Copy the database (always overwrite so the latest data is saved)
     fs.copyFileSync(dbSource, backupPath)
-    console.log('[backup] ✓ Backup created:', backupPath)
+    console.log('[backup] ✓ Backup saved:', backupPath)
 
     // 5. Clean up old backups
     cleanOldBackups(backupDir)

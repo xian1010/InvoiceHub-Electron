@@ -94,9 +94,6 @@ app.whenReady().then(() => {
 
   registerIpcHandlers()
 
-  // Auto-backup: copy DB to sibling Invoice_Backups folder (production only)
-  runAutoBackup()
-
   const mainWin = createWindow()
 
   // Check for updates 3s after window is ready (let UI load first)
@@ -108,6 +105,8 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
+  // Auto-backup: save latest DB to sibling Invoice_Backups folder before quitting
+  runAutoBackup()
   closeDb()
   if (process.platform !== 'darwin') app.quit()
 })
