@@ -211,3 +211,148 @@ function _parseAndNormalise(raw) {
 
   return data
 }
+
+// ── Invoice PDF Recovery ──────────────────────────────────────────────────────
+
+const INVOICE_SYSTEM_PROMPT = `You are a professional financial accountant. Your task is to extract key data from Invoice PDF images.
+Your output must be strict JSON format, without any explanation or extra text.
+IMPORTANT: Ignore all purely blank rows, separator lines, or decorative/formatting rows in the invoice table. Only extract rows that contain actual product descriptions, quantities, or amounts.`
+
+const INVOICE_USER_PROMPT = `Please read this Invoice PDF image, extract the following information, and return STRICTLY as JSON without any chat:
+
+{
+  "invoice_no":  "<Invoice number, e.g. INV-0001>",
+  "customer":    "<Customer / Bill To company name>",
+  "address":     "<Customer billing address>",
+  "date":        "<Invoice date, format YYYY-MM-DD>",
+  "attn":        "<Attention / contact person, empty string if none>",
+  "tel":         "<Telephone number, empty string if none>",
+  "acc_code":    "<Account code, empty string if none>",
+  "terms":       "<Payment terms, e.g. 30 days, empty string if none>",
+  "ref1":        "<Reference 1 / PO number, empty string if none>",
+  "ref2":        "<Reference 2, empty string if none>",
+  "items": [
+    {
+      "description": "<Product or service description. Preserve line breaks using \\\\n in the JSON string.>",
+      "po_no":       "<PO number for this line item, empty string if none>",
+      "qty":         "<Quantity, pure number string>",
+      "uom":         "<Unit: PCS / UNIT / SET / BOX / LOT / KG etc.>",
+      "uprice":      "<Unit price, pure number string without currency symbol. Use '-' if lump sum>",
+      "subtotal":    "<Line subtotal, pure number string>"
+    }
+  ]
+}
+
+Rules:
+- Only return the JSON object, no other text.
+- Missing fields should be empty string "".
+- Number fields must not contain commas or currency symbols.
+- Extract ALL valid line items. SKIP blank/header/subtotal/footer rows.
+- If the date format is DD/MM/YYYY, convert it to YYYY-MM-DD.
+- CRITICAL: description line breaks must use \\\\n escape.`
+
+/**
+ * Extract invoice data from a PDF file (for bulk recovery).
+ * @param {string} filePath  absolute path to PDF
+ * @returns {Promise<object>}  structured invoice data
+ */
+export async function extractInvoiceData(filePath) {
+  const ext = path.extname(filePath).toLowerCase()
+
+  let imagePath = filePath
+  let tempImage = null
+
+  // Convert PDF to image
+  if (ext === '.pdf') {
+    imagePath = await pdfToImage(filePath)
+    tempImage = imagePath
+  }
+
+  const imgExt = path.extname(imagePath).toLowerCase()
+  const mediaType = MEDIA_TYPES[imgExt]
+
+  if (!mediaType) {
+    throw new Error(`Unsupported file format '${ext}'`)
+  }
+
+  try {
+    const fileBuffer = fs.readFileSync(imagePath)
+    const b64 = fileBuffer.toString('base64')
+
+    const content = [
+      {
+        type: 'image_url',
+        image_url: { url: `data:${mediaType};base64,${b64}` }
+      },
+      { type: 'text', text: INVOICE_USER_PROMPT }
+    ]
+
+    const client = new OpenAI({ apiKey: API_KEY, baseURL: BASE_URL, timeout: 90000 })
+
+    console.log(`[ai:recovery] -> model=${MODEL}  file=${filePath}`)
+
+    const response = await client.chat.completions.create({
+      model: MODEL,
+      max_tokens: 4000,
+      messages: [
+        { role: 'system', content: INVOICE_SYSTEM_PROMPT },
+        { role: 'user',   content }
+      ]
+    })
+
+    const raw = response.choices[0].message.content.trim()
+    console.log(`[ai:recovery] Raw (first 300): ${raw.slice(0, 300)}`)
+    return _parseInvoiceResult(raw)
+  } finally {
+    if (tempImage) {
+      try { fs.unlinkSync(tempImage) } catch {}
+    }
+  }
+}
+
+function _parseInvoiceResult(raw) {
+  const cleaned = raw
+    .replace(/^```(?:json)?\s*/m, '')
+    .replace(/```\s*$/m, '')
+    .trim()
+
+  let data
+  try {
+    data = JSON.parse(cleaned)
+  } catch {
+    throw new Error(`AI returned invalid JSON:\n${cleaned.slice(0, 400)}`)
+  }
+
+  // Normalise header fields
+  for (const key of ['invoice_no', 'customer', 'address', 'date', 'attn', 'tel', 'acc_code', 'terms', 'ref1', 'ref2']) {
+    if (data[key] == null) data[key] = ''
+    data[key] = String(data[key]).trim()
+  }
+
+  // Normalise date to YYYY-MM-DD if it came as DD/MM/YYYY
+  if (data.date && data.date.includes('/')) {
+    const parts = data.date.split('/')
+    if (parts.length === 3 && parts[2].length === 4) {
+      data.date = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+    }
+  }
+
+  // Normalise items
+  data.items = (data.items ?? [])
+    .map(item => {
+      const rawDesc = String(item.description ?? '').trim()
+      const description = rawDesc.replace(/\\n/g, '\n')
+      const po_no    = String(item.po_no    ?? '').trim()
+      const qty      = String(item.qty      ?? '1').trim()
+      const uom      = (String(item.uom     ?? 'PCS').trim().toUpperCase()) || 'PCS'
+      const uprice   = String(item.uprice   ?? '-').trim()
+      const subtotal = String(item.subtotal ?? '0').trim()
+      return { description, po_no, qty, uom, uprice, subtotal }
+    })
+    .filter(item => item.description.trim() !== '')
+
+  // Calculate total from items
+  data.total = data.items.reduce((sum, item) => sum + (parseFloat(item.subtotal) || 0), 0)
+
+  return data
+}

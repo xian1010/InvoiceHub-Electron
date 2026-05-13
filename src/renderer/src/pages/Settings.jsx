@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { FolderOpen, Save, Loader2, FileText, X } from 'lucide-react'
+import { FolderOpen, Save, Loader2, FileText, X, RotateCcw, AlertTriangle, CheckCircle2, SkipForward } from 'lucide-react'
 
 export default function Settings() {
   const [invoicePath, setInvoicePath] = useState('')
@@ -9,6 +9,13 @@ export default function Settings() {
   const [saving, setSaving] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [toast, setToast] = useState({ show: false, message: '' })
+
+  // Recovery state
+  const [recoveryStage, setRecoveryStage] = useState('idle') // idle | confirming | running | done
+  const [recoveryFolder, setRecoveryFolder] = useState('')
+  const [recoveryCount, setRecoveryCount] = useState(0)
+  const [recoveryProgress, setRecoveryProgress] = useState({ current: 0, total: 0, fileName: '' })
+  const [recoveryResult, setRecoveryResult] = useState(null)
 
   // Load current paths on mount
   useEffect(() => {
@@ -24,6 +31,15 @@ export default function Settings() {
       if (defs) setDefaults(defs)
       setLoaded(true)
     }).catch(console.error)
+  }, [])
+
+  // Listen for recovery progress events
+  useEffect(() => {
+    if (!window.api?.recovery) return
+    window.api.recovery.onProgress((data) => {
+      setRecoveryProgress(data)
+    })
+    return () => window.api.recovery.removeProgressListener()
   }, [])
 
   const browse = async (setter) => {
@@ -138,6 +154,169 @@ export default function Settings() {
               defaultHint={`Default: ${defaults.stmt}`}
             />
           </div>
+        </div>
+
+        {/* Recovery Card */}
+        <div className="bg-white rounded-2xl shadow-sm border border-border p-8 max-w-3xl mt-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+              <RotateCcw size={20} className="text-amber-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-ink">Bulk PDF Recovery</h2>
+              <p className="text-sm text-ink-muted">Recover invoice data from exported PDF files using AI</p>
+            </div>
+          </div>
+
+          {/* Idle — start button */}
+          {recoveryStage === 'idle' && (
+            <div className="space-y-3">
+              <p className="text-sm text-ink-2 leading-relaxed">
+                Lost your database? Select a folder containing your exported Invoice PDFs.
+                AI will read each PDF, extract all data, and restore them into your database.
+              </p>
+              <div className="flex items-center gap-2 px-3 py-2.5 bg-amber-50 rounded-xl border border-amber-200">
+                <AlertTriangle size={14} className="text-amber-600 shrink-0" />
+                <p className="text-xs text-amber-700">
+                  Duplicates are automatically skipped — safe to run multiple times.
+                </p>
+              </div>
+              <button
+                onClick={async () => {
+                  const result = await window.api.recovery.selectFolder()
+                  if (result) {
+                    setRecoveryFolder(result.folder)
+                    setRecoveryCount(result.count)
+                    setRecoveryStage('confirming')
+                  }
+                }}
+                className="flex items-center gap-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold transition-colors shadow-sm text-sm"
+              >
+                <FolderOpen size={16} />
+                Select Invoice PDF Folder
+              </button>
+            </div>
+          )}
+
+          {/* Confirming — show count, confirm */}
+          {recoveryStage === 'confirming' && (
+            <div className="space-y-4">
+              <div className="bg-gray-50 rounded-xl p-4">
+                <p className="text-sm text-ink font-medium">
+                  Found <span className="font-bold text-accent">{recoveryCount}</span> PDF files in:
+                </p>
+                <p className="text-xs text-ink-muted mt-1 font-mono truncate">{recoveryFolder}</p>
+              </div>
+              {recoveryCount === 0 ? (
+                <div className="flex gap-2">
+                  <p className="text-sm text-red-500">No PDF files found in this folder.</p>
+                  <button
+                    onClick={() => setRecoveryStage('idle')}
+                    className="text-sm text-accent hover:underline font-medium"
+                  >
+                    Try Another Folder
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setRecoveryStage('idle')}
+                    className="flex-1 h-10 text-sm font-medium text-ink-muted bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setRecoveryStage('running')
+                      setRecoveryProgress({ current: 0, total: recoveryCount, fileName: '' })
+                      try {
+                        const result = await window.api.recovery.bulkFromPdf(recoveryFolder)
+                        setRecoveryResult(result)
+                        setRecoveryStage('done')
+                      } catch (err) {
+                        setRecoveryResult({ total: recoveryCount, saved: 0, skipped: 0, errors: [{ file: 'System', error: err.message }] })
+                        setRecoveryStage('done')
+                      }
+                    }}
+                    className="flex-1 h-10 text-sm font-semibold text-white bg-accent hover:bg-accent-hover rounded-xl transition-colors flex items-center justify-center gap-2"
+                  >
+                    <RotateCcw size={14} />
+                    Start Recovery ({recoveryCount} PDFs)
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Running — progress bar */}
+          {recoveryStage === 'running' && (
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-semibold text-ink tabular-nums">
+                    {recoveryProgress.current} / {recoveryProgress.total}
+                  </span>
+                  <span className="text-[11px] text-ink-muted font-medium">
+                    {Math.round((recoveryProgress.current / Math.max(recoveryProgress.total, 1)) * 100)}%
+                  </span>
+                </div>
+                <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-amber-400 to-accent transition-all duration-500 ease-out"
+                    style={{ width: `${(recoveryProgress.current / Math.max(recoveryProgress.total, 1)) * 100}%` }}
+                  />
+                </div>
+                <p className="text-xs text-ink-muted mt-2 truncate">
+                  <Loader2 size={11} className="inline animate-spin mr-1" />
+                  Processing: {recoveryProgress.fileName || '...'}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Done — results summary */}
+          {recoveryStage === 'done' && recoveryResult && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-emerald-50 rounded-xl p-3 text-center">
+                  <CheckCircle2 size={18} className="text-emerald-500 mx-auto mb-1" />
+                  <p className="text-lg font-bold text-emerald-700">{recoveryResult.saved}</p>
+                  <p className="text-[11px] text-emerald-600 font-medium">Recovered</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-3 text-center">
+                  <SkipForward size={18} className="text-gray-400 mx-auto mb-1" />
+                  <p className="text-lg font-bold text-ink-muted">{recoveryResult.skipped}</p>
+                  <p className="text-[11px] text-ink-muted font-medium">Skipped (exists)</p>
+                </div>
+                <div className="bg-red-50 rounded-xl p-3 text-center">
+                  <AlertTriangle size={18} className="text-red-400 mx-auto mb-1" />
+                  <p className="text-lg font-bold text-red-600">{recoveryResult.errors?.length || 0}</p>
+                  <p className="text-[11px] text-red-500 font-medium">Errors</p>
+                </div>
+              </div>
+
+              {recoveryResult.errors?.length > 0 && (
+                <div className="bg-red-50 rounded-xl p-3 max-h-40 overflow-y-auto">
+                  <p className="text-[11px] font-bold text-red-600 uppercase tracking-widest mb-2">Errors</p>
+                  {recoveryResult.errors.map((e, i) => (
+                    <p key={i} className="text-xs text-red-600 py-0.5 truncate">
+                      <span className="font-semibold">{e.file}:</span> {e.error}
+                    </p>
+                  ))}
+                </div>
+              )}
+
+              <button
+                onClick={() => {
+                  setRecoveryStage('idle')
+                  setRecoveryResult(null)
+                }}
+                className="w-full h-10 text-sm font-medium text-ink-muted bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          )}
         </div>
 
       </div>

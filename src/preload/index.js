@@ -94,6 +94,13 @@ const updater = {
   }
 }
 
+const recovery = {
+  selectFolder:           ()           => ipcRenderer.invoke('recovery:selectFolder'),
+  bulkFromPdf:            (folderPath) => ipcRenderer.invoke('recovery:bulkFromPdf', folderPath),
+  onProgress:             (cb)         => ipcRenderer.on('recovery:progress', (_e, data) => cb(data)),
+  removeProgressListener: ()           => ipcRenderer.removeAllListeners('recovery:progress')
+}
+
 // ── Expose ────────────────────────────────────────────────────────────────────
 
 const api = {
@@ -132,7 +139,8 @@ const api = {
   statement,
   ai,
   email,
-  updater
+  updater,
+  recovery
 }
 
 if (process.contextIsolated) {

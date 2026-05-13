@@ -1,5 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join, dirname } from 'path'
+import path from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initAutoUpdater } from './updater'
 import {
@@ -39,7 +40,7 @@ import {
   listEmailContacts,
   upsertEmailContact
 } from './db'
-import { extractPoData } from './ai'
+import { extractPoData, extractInvoiceData } from './ai'
 import { testEmailConnection, sendEmail } from './email'
 import { spawn } from 'child_process'
 import fs from 'fs'
@@ -595,5 +596,103 @@ print("SUCCESS:" + out_path)
         reject(err)
       }
     })
+  })
+
+  // ── Bulk PDF Recovery ────────────────────────────────────────────────────
+  ipcMain.handle('recovery:selectFolder', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      title: 'Select folder containing Invoice PDFs',
+      properties: ['openDirectory']
+    })
+    if (canceled || !filePaths.length) return null
+    // Count PDFs in the folder
+    const folder = filePaths[0]
+    const pdfs = fs.readdirSync(folder).filter(f => f.toLowerCase().endsWith('.pdf'))
+    return { folder, count: pdfs.length }
+  })
+
+  ipcMain.handle('recovery:bulkFromPdf', async (event, folderPath) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const db = getDb()
+    const files = fs.readdirSync(folderPath)
+      .filter(f => f.toLowerCase().endsWith('.pdf'))
+      .map(f => join(folderPath, f))
+
+    const results = { total: files.length, processed: 0, saved: 0, skipped: 0, errors: [] }
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const fileName = path.basename(file)
+
+      // Send progress to renderer
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('recovery:progress', {
+          current: i + 1,
+          total: files.length,
+          fileName,
+          status: 'processing'
+        })
+      }
+
+      try {
+        const data = await extractInvoiceData(file)
+
+        if (!data.invoice_no) {
+          results.errors.push({ file: fileName, error: 'No invoice number found' })
+          results.processed++
+          continue
+        }
+
+        // Duplicate check
+        const existing = db.prepare('SELECT invoice_no FROM invoices WHERE invoice_no = ?').get(data.invoice_no)
+        if (existing) {
+          results.skipped++
+          results.processed++
+          console.log(`[recovery] Skipped ${data.invoice_no} — already exists`)
+          continue
+        }
+
+        // Build header for saveInvoice
+        const header = {
+          invoice_no: data.invoice_no,
+          customer:   data.customer,
+          date:       data.date,
+          total:      data.total,
+          address:    data.address,
+          attn:       data.attn,
+          tel:        data.tel,
+          acc_code:   data.acc_code,
+          terms:      data.terms,
+          ref1:       data.ref1,
+          ref2:       data.ref2,
+          ref3:       '',
+          ref4:       '',
+          status:     'Paid'   // Recovered invoices are historical, mark as Paid
+        }
+
+        saveInvoice(header, data.items)
+        results.saved++
+        results.processed++
+        console.log(`[recovery] Saved ${data.invoice_no} (${data.items.length} items)`)
+
+      } catch (err) {
+        results.errors.push({ file: fileName, error: err.message || String(err) })
+        results.processed++
+        console.error(`[recovery] Error processing ${fileName}:`, err.message)
+      }
+    }
+
+    // Send final completion signal
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('recovery:progress', {
+        current: files.length,
+        total: files.length,
+        fileName: '',
+        status: 'done'
+      })
+    }
+
+    return results
   })
 }
