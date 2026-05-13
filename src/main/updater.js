@@ -5,7 +5,8 @@
  * process through IPC events. Updates are fetched from GitHub Releases.
  */
 
-import { autoUpdater } from 'electron-updater'
+import pkg from 'electron-updater'
+const { autoUpdater } = pkg
 import { ipcMain } from 'electron'
 import { is } from '@electron-toolkit/utils'
 

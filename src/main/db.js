@@ -19,35 +19,38 @@ export function getDbPath() {
     return devPath;
   }
 
-  // Production: ALWAYS use userData (%AppData%/invoicehub-electron/)
-  // This survives NSIS auto-updates which replace the installation directory.
-  const userDataDir = app.getPath('userData')
-  const dbDest = path.join(userDataDir, 'invoice.db')
+  // Production: use data/ folder next to the executable (portable mode).
+  // This keeps the DB alongside the app for easy backup and migration.
+  const appDir = path.dirname(process.execPath)
+  const dataDir = path.join(appDir, 'data')
+  const dbDest = path.join(dataDir, 'invoice.db')
 
+  // CRITICAL: Only seed if the DB does NOT already exist.
+  // Never overwrite an existing database — it contains user data.
   if (!fs.existsSync(dbDest)) {
-    fs.mkdirSync(userDataDir, { recursive: true })
-
-    // Migration: check if old portable-mode DB exists (pre-v1.1 installs)
-    const oldPortable = path.join(path.dirname(process.execPath), 'data', 'invoice.db')
-    if (fs.existsSync(oldPortable)) {
-      try {
-        fs.copyFileSync(oldPortable, dbDest)
-        console.log('[db] Migrated portable DB → userData:', dbDest)
-      } catch (err) {
-        console.error('[db] Migration copy failed:', err)
+    try {
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true })
       }
-    } else {
-      // First install — seed from bundled resources
       const seedSrc = path.join(process.resourcesPath, 'invoice.db')
       if (fs.existsSync(seedSrc)) {
-        try {
-          fs.copyFileSync(seedSrc, dbDest)
-          console.log('[db] Seeded new DB from resources:', dbDest)
-        } catch (err) {
-          console.error('[db] Seed copy failed:', err)
-        }
+        fs.copyFileSync(seedSrc, dbDest)
+        console.log('[db] First run — seeded invoice.db →', dbDest)
       }
+    } catch (err) {
+      console.error('[db] Seed failed:', err)
+      // Fallback: use AppData if install dir is read-only (e.g. Program Files)
+      const fallback = path.join(app.getPath('userData'), 'invoice.db')
+      if (!fs.existsSync(fallback)) {
+        fs.mkdirSync(app.getPath('userData'), { recursive: true })
+        const seedSrc = path.join(process.resourcesPath, 'invoice.db')
+        if (fs.existsSync(seedSrc)) fs.copyFileSync(seedSrc, fallback)
+      }
+      console.warn('[db] Using AppData fallback:', fallback)
+      return fallback
     }
+  } else {
+    console.log('[db] Existing DB found, not overwriting:', dbDest)
   }
 
   return dbDest
