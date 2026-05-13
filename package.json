@@ -9,7 +9,8 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "build:win": "electron-vite build && electron-builder --config electron-builder.yml",
-    "postinstall": "node scripts/postinstall.mjs"
+    "postinstall": "node scripts/postinstall.mjs",
+    "release": "npm version patch && npm run build:win -- --publish always"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
