@@ -117,6 +117,38 @@ function registerIpcHandlers() {
   // Open a folder in system file explorer
   ipcMain.handle('shell:openFolder', (_, folderPath) => shell.openPath(folderPath))
 
+  // ── Database Restore ──────────────────────────────────────────────────────
+  ipcMain.handle('restore-database', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      title: 'Select Database Backup File',
+      filters: [{ name: 'SQLite Database', extensions: ['db'] }],
+      properties: ['openFile']
+    })
+    if (canceled || !filePaths.length) return { ok: false, reason: 'cancelled' }
+
+    const selectedFile = filePaths[0]
+    const destPath = getDbPath()
+
+    try {
+      // Close the active DB connection to prevent "database locked" errors
+      closeDb()
+
+      // Overwrite the live database with the selected backup
+      fs.copyFileSync(selectedFile, destPath)
+      console.log('[restore] ✓ Database restored from:', selectedFile)
+
+      // Relaunch the app so the new data loads cleanly
+      app.relaunch()
+      app.quit()
+
+      return { ok: true }
+    } catch (err) {
+      console.error('[restore] Failed:', err.message)
+      return { ok: false, reason: err.message }
+    }
+  })
+
   // Dashboard
   ipcMain.handle('db:getDashboardStats',  () => getDashboardStats())
   ipcMain.handle('db:getRecentInvoices',  (_, limit) => getRecentInvoices(limit))

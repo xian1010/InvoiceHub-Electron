@@ -128,6 +128,7 @@ const api = {
 
   // Utility
   getNextPaymentNo: ()  => ipcRenderer.invoke('db:getNextPaymentNo'),
+  restoreDatabase:  ()  => ipcRenderer.invoke('restore-database'),
 
   // ── Sub-namespaces ──────────────────────────────────────────────────────
   invoices,

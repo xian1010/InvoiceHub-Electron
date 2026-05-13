@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { FolderOpen, Save, Loader2, FileText, X, RotateCcw, AlertTriangle, CheckCircle2, SkipForward } from 'lucide-react'
+import { FolderOpen, Save, Loader2, FileText, X, RotateCcw, AlertTriangle, CheckCircle2, SkipForward, HardDriveDownload } from 'lucide-react'
 
 export default function Settings() {
   const [invoicePath, setInvoicePath] = useState('')
@@ -317,6 +317,54 @@ export default function Settings() {
               </button>
             </div>
           )}
+        </div>
+
+        {/* Database Management Card */}
+        <div className="bg-white rounded-2xl shadow-sm border border-border p-8 max-w-3xl mt-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
+              <HardDriveDownload size={20} className="text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-ink">Database Management</h2>
+              <p className="text-sm text-ink-muted">Restore a previous database backup to recover your data</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-sm text-ink-2 leading-relaxed">
+              Select a <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">.db</code> backup file to replace the current database.
+              The app will restart automatically after the restore is complete.
+            </p>
+            <div className="flex items-center gap-2 px-3 py-2.5 bg-red-50 rounded-xl border border-red-200">
+              <AlertTriangle size={14} className="text-red-500 shrink-0" />
+              <p className="text-xs text-red-600">
+                This will overwrite your current data. Make sure you have a backup before proceeding.
+              </p>
+            </div>
+            <button
+              onClick={async () => {
+                const confirmed = window.confirm(
+                  'Are you sure you want to restore a database backup?\n\n' +
+                  'Your current data will be REPLACED and the app will restart.\n' +
+                  'This action cannot be undone.'
+                )
+                if (!confirmed) return
+                try {
+                  const result = await window.api.restoreDatabase()
+                  if (result && !result.ok && result.reason !== 'cancelled') {
+                    setToast({ show: true, message: `Restore failed: ${result.reason}` })
+                  }
+                } catch (err) {
+                  setToast({ show: true, message: `Restore error: ${err.message}` })
+                }
+              }}
+              className="flex items-center gap-2 px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-bold transition-colors shadow-sm text-sm"
+            >
+              <HardDriveDownload size={16} />
+              Restore Database Backup
+            </button>
+          </div>
         </div>
 
       </div>
