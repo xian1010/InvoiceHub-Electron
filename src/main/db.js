@@ -15,42 +15,48 @@ import fs from 'fs'
 export function getDbPath() {
   if (!app.isPackaged) {
     // Dev: reuse the existing Python project's database next to the invoice-electron folder.
-    const devPath = path.join(process.cwd(), '..', 'invoice.db');
-    return devPath;
+    const devPath = path.join(process.cwd(), '..', 'invoice.db')
+    return devPath
   }
 
-  // Production: use data/ folder next to the executable (portable mode).
-  // This keeps the DB alongside the app for easy backup and migration.
-  const appDir = path.dirname(process.execPath)
-  const dataDir = path.join(appDir, 'data')
-  const dbDest = path.join(dataDir, 'invoice.db')
+  // ── Production: store DB in userData (survives app updates) ──────────────
+  // On Windows this is typically: C:\Users\<user>\AppData\Roaming\InvoiceHub\
+  const userDataDir = app.getPath('userData')
+  fs.mkdirSync(userDataDir, { recursive: true })
+  const dbDest = path.join(userDataDir, 'invoice.db')
 
-  // CRITICAL: Only seed if the DB does NOT already exist.
-  // Never overwrite an existing database — it contains user data.
+  // ── One-time migration from old install-dir location ────────────────────
+  // Previous versions stored the DB at <installDir>/data/invoice.db.
+  // If we find one there and userData doesn't have a DB yet, migrate it.
   if (!fs.existsSync(dbDest)) {
-    try {
-      if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true })
+    const installDir = path.dirname(process.execPath)
+    const oldDbPath = path.join(installDir, 'data', 'invoice.db')
+
+    if (fs.existsSync(oldDbPath)) {
+      try {
+        fs.copyFileSync(oldDbPath, dbDest)
+        console.log('[db] Migrated DB from install dir →', dbDest)
+      } catch (err) {
+        console.error('[db] Migration copy failed:', err)
       }
-      const seedSrc = path.join(process.resourcesPath, 'invoice.db')
-      if (fs.existsSync(seedSrc)) {
+    }
+  }
+
+  // ── First-run seed from bundled resource ────────────────────────────────
+  // If no DB exists yet (fresh install, no old data to migrate), seed from
+  // the template bundled in resources/.
+  if (!fs.existsSync(dbDest)) {
+    const seedSrc = path.join(process.resourcesPath, 'invoice.db')
+    if (fs.existsSync(seedSrc)) {
+      try {
         fs.copyFileSync(seedSrc, dbDest)
         console.log('[db] First run — seeded invoice.db →', dbDest)
+      } catch (err) {
+        console.error('[db] Seed failed:', err)
       }
-    } catch (err) {
-      console.error('[db] Seed failed:', err)
-      // Fallback: use AppData if install dir is read-only (e.g. Program Files)
-      const fallback = path.join(app.getPath('userData'), 'invoice.db')
-      if (!fs.existsSync(fallback)) {
-        fs.mkdirSync(app.getPath('userData'), { recursive: true })
-        const seedSrc = path.join(process.resourcesPath, 'invoice.db')
-        if (fs.existsSync(seedSrc)) fs.copyFileSync(seedSrc, fallback)
-      }
-      console.warn('[db] Using AppData fallback:', fallback)
-      return fallback
     }
   } else {
-    console.log('[db] Existing DB found, not overwriting:', dbDest)
+    console.log('[db] Existing DB found:', dbDest)
   }
 
   return dbDest

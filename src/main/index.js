@@ -42,6 +42,7 @@ import {
 } from './db'
 import { extractPoData, extractInvoiceData } from './ai'
 import { testEmailConnection, sendEmail } from './email'
+import { runAutoBackup } from './backup'
 import { spawn } from 'child_process'
 import fs from 'fs'
 
@@ -92,6 +93,10 @@ app.whenReady().then(() => {
   })
 
   registerIpcHandlers()
+
+  // Auto-backup: copy DB to sibling Invoice_Backups folder (production only)
+  runAutoBackup()
+
   const mainWin = createWindow()
 
   // Check for updates 3s after window is ready (let UI load first)

@@ -40,11 +40,10 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: InvoiceHub
   deleteAppDataOnUninstall: false
-  # The data/ folder (containing invoice.db) lives in the install directory.
-  # NSIS full-update replaces app files but does NOT touch data/ because:
-  # 1. electron-builder only overwrites files it ships (listed in "files:" above)
-  # 2. data/ is created at runtime by the app, not by the installer
-  # 3. The seed DB is in resources/invoice.db; code only copies it if data/invoice.db is missing
+  # The live invoice.db is stored in userData (AppData\Roaming\InvoiceHub\).
+  # Setting deleteAppDataOnUninstall to false ensures the DB is preserved
+  # even if the user uninstalls the app. The seed DB in resources/ is only
+  # used for first-run bootstrap or if no existing DB is found.
 
 # Rebuild native modules (better-sqlite3) for the bundled Electron
 npmRebuild: true
