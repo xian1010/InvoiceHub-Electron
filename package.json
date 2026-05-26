@@ -1,6 +1,6 @@
 {
   "name": "invoicehub-electron",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "InvoiceHub — Electron + React + Tailwind",
   "type": "module",
   "main": "out/main/index.js",
