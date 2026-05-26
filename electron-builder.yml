@@ -21,6 +21,8 @@ extraResources:
     to: bin/pdf_quotation.exe
   - from: resources/bin/pdf_statement.exe
     to: bin/pdf_statement.exe
+  - from: resources/bin/pdf_credit_note.exe
+    to: bin/pdf_credit_note.exe
   # Seed SQLite database (first-run bootstrap)
   - from: resources/invoice.db
     to: invoice.db
