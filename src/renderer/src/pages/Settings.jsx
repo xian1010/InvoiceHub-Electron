@@ -5,7 +5,8 @@ export default function Settings() {
   const [invoicePath, setInvoicePath] = useState('')
   const [quotationPath, setQuotationPath] = useState('')
   const [statementPath, setStatementPath] = useState('')
-  const [defaults, setDefaults] = useState({ inv: '', quot: '', stmt: '' })
+  const [creditNotePath, setCreditNotePath] = useState('')
+  const [defaults, setDefaults] = useState({ inv: '', quot: '', stmt: '', cn: '' })
   const [saving, setSaving] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [toast, setToast] = useState({ show: false, message: '' })
@@ -23,11 +24,13 @@ export default function Settings() {
       window.api.getInvoiceExportPath(),
       window.api.getQuotationExportPath(),
       window.api.getStatementExportPath(),
+      window.api.getCreditNoteExportPath(),
       window.api.getDefaultPaths()
-    ]).then(([inv, qt, st, defs]) => {
+    ]).then(([inv, qt, st, cn, defs]) => {
       setInvoicePath(inv || '')
       setQuotationPath(qt || '')
       setStatementPath(st || '')
+      setCreditNotePath(cn || '')
       if (defs) setDefaults(defs)
       setLoaded(true)
     }).catch(console.error)
@@ -50,7 +53,7 @@ export default function Settings() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      await window.api.saveExportPaths(invoicePath, quotationPath, statementPath)
+      await window.api.saveExportPaths(invoicePath, quotationPath, statementPath, creditNotePath)
       setTimeout(() => setSaving(false), 600)
     } catch (err) {
       console.error(err)
@@ -152,6 +155,13 @@ export default function Settings() {
               onChange={setStatementPath}
               onBrowse={() => browse(setStatementPath)}
               defaultHint={`Default: ${defaults.stmt}`}
+            />
+            <PathRow
+              label="Credit Note Export Folder"
+              value={creditNotePath}
+              onChange={setCreditNotePath}
+              onBrowse={() => browse(setCreditNotePath)}
+              defaultHint={`Default: ${defaults.cn}`}
             />
           </div>
         </div>

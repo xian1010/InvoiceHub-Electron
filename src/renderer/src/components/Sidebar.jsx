@@ -11,7 +11,8 @@ import {
   Settings,
   HelpCircle,
   Package,
-  Mail
+  Mail,
+  FileMinus
 } from 'lucide-react'
 
 // ── Nav structure (mirrors main_app.py _build_sidebar) ───────────────────────
@@ -21,10 +22,11 @@ const TOP_ITEMS = [
 ]
 
 const SALES_ITEMS = [
-  { icon: FileText,   label: 'Invoices',   to: '/invoices' },
-  { icon: Quote,      label: 'Quotation',  to: '/quotations' },
-  { icon: BarChart2,  label: 'Statement',  to: '/statement' },
-  { icon: CreditCard, label: 'Receipts',   to: '/receipts' }
+  { icon: FileText,   label: 'Invoices',    to: '/invoices' },
+  { icon: FileMinus,  label: 'Credit Note', to: '/credit-notes' },
+  { icon: Quote,      label: 'Quotation',   to: '/quotations' },
+  { icon: BarChart2,  label: 'Statement',   to: '/statement' },
+  { icon: CreditCard, label: 'Receipts',    to: '/receipts' }
 ]
 
 const MASTER_ITEMS = [

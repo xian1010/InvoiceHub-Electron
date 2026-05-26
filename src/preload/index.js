@@ -40,6 +40,16 @@ const quotations = {
   exportPdf: (data, shouldOpen = true)          => ipcRenderer.invoke('quotation:exportPdf', data, shouldOpen)
 }
 
+const creditNotes = {
+  list:      ()              => ipcRenderer.invoke('creditNote:list'),
+  get:       (no)            => ipcRenderer.invoke('creditNote:get', no),
+  save:      (header, items) => ipcRenderer.invoke('creditNote:save', header, items),
+  delete:    (no)            => ipcRenderer.invoke('creditNote:delete', no),
+  setStatus: (no, status)    => ipcRenderer.invoke('creditNote:setStatus', no, status),
+  nextNo:    ()              => ipcRenderer.invoke('creditNote:nextNo'),
+  exportPdf: (data, shouldOpen = true)          => ipcRenderer.invoke('creditNote:exportPdf', data, shouldOpen)
+}
+
 const company = {
   get:  ()     => ipcRenderer.invoke('company:get'),
   save: (data) => ipcRenderer.invoke('company:save', data)
@@ -116,8 +126,9 @@ const api = {
   getInvoiceExportPath:   ()            => ipcRenderer.invoke('db:getInvoiceExportPath'),
   getQuotationExportPath: ()            => ipcRenderer.invoke('db:getQuotationExportPath'),
   getStatementExportPath: ()            => ipcRenderer.invoke('db:getStatementExportPath'),
+  getCreditNoteExportPath: ()           => ipcRenderer.invoke('db:getCreditNoteExportPath'),
   getDefaultPaths:        ()            => ipcRenderer.invoke('db:getDefaultPaths'),
-  saveExportPaths: (inv, quot, stmt)    => ipcRenderer.invoke('db:saveExportPaths', inv, quot, stmt),
+  saveExportPaths: (inv, quot, stmt, cn) => ipcRenderer.invoke('db:saveExportPaths', inv, quot, stmt, cn),
   selectFolder: ()                      => ipcRenderer.invoke('dialog:selectFolder'),
   openFolder:   (p)                     => ipcRenderer.invoke('shell:openFolder', p),
 
@@ -134,6 +145,7 @@ const api = {
   invoices,
   customers,
   quotations,
+  creditNotes,
   company,
   products,
   receipts,

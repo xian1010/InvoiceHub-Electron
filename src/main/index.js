@@ -12,6 +12,7 @@ import {
   getInvoiceExportPath,
   getQuotationExportPath,
   getStatementExportPath,
+  getCreditNoteExportPath,
   saveExportPaths,
   getDefaultPaths,
   getDb,
@@ -31,6 +32,12 @@ import {
   deleteQuotation,
   updateQuotationStatus,
   getNextQuotationNo,
+  listCreditNotes,
+  getCreditNote,
+  saveCreditNote,
+  deleteCreditNote,
+  updateCreditNoteStatus,
+  getNextCnNo,
   listProducts,
   saveProduct,
   deleteProduct,
@@ -161,9 +168,10 @@ function registerIpcHandlers() {
   ipcMain.handle('db:getInvoiceExportPath',   () => getInvoiceExportPath())
   ipcMain.handle('db:getQuotationExportPath', () => getQuotationExportPath())
   ipcMain.handle('db:getStatementExportPath', () => getStatementExportPath())
+  ipcMain.handle('db:getCreditNoteExportPath', () => getCreditNoteExportPath())
   ipcMain.handle('db:getDefaultPaths',        () => getDefaultPaths())
-  ipcMain.handle('db:saveExportPaths', (_, inv, quot, stmt) =>
-    saveExportPaths(inv, quot, stmt))
+  ipcMain.handle('db:saveExportPaths', (_, inv, quot, stmt, cn) =>
+    saveExportPaths(inv, quot, stmt, cn))
 
   // Folder picker dialog
   ipcMain.handle('dialog:selectFolder', async (event) => {
@@ -273,6 +281,14 @@ function registerIpcHandlers() {
   ipcMain.handle('quotation:setStatus',    (_, no, st)   => updateQuotationStatus(no, st))
   ipcMain.handle('quotation:nextNo',       ()            => getNextQuotationNo())
 
+  // ── Credit Notes CRUD ─────────────────────────────────────────────────────
+  ipcMain.handle('creditNote:list',         ()            => listCreditNotes())
+  ipcMain.handle('creditNote:get',          (_, no)       => getCreditNote(no))
+  ipcMain.handle('creditNote:save',         (_, hdr, itm) => saveCreditNote(hdr, itm))
+  ipcMain.handle('creditNote:delete',       (_, no)       => deleteCreditNote(no))
+  ipcMain.handle('creditNote:setStatus',    (_, no, st)   => updateCreditNoteStatus(no, st))
+  ipcMain.handle('creditNote:nextNo',       ()            => getNextCnNo())
+
   // ── Receipts / Payments ──────────────────────────────────────────────────
   ipcMain.handle('receipts:getCustomers', () => {
     return getDb()
@@ -374,7 +390,11 @@ function registerIpcHandlers() {
     const [obCredit] = db
       .prepare(`SELECT COALESCE(SUM(amount),0) FROM payments WHERE customer=? AND date<?`)
       .raw().get(customer, fromDate)
-    const openingBalance = Number(obDebit) - Number(obCredit)
+    // Opening balance: credit notes before fromDate (deduct from balance)
+    const [obCn] = db
+      .prepare(`SELECT COALESCE(SUM(total),0) FROM credit_notes WHERE customer=? AND date<?`)
+      .raw().get(customer, fromDate)
+    const openingBalance = Number(obDebit) - Number(obCredit) - Number(obCn)
 
     // Invoices in range
     const invRows = db
@@ -394,6 +414,15 @@ function registerIpcHandlers() {
       `)
       .all(customer, fromDate, toDate)
 
+    // Credit notes in range
+    const cnRows = db
+      .prepare(`
+        SELECT date, cn_no, total, linked_invoice FROM credit_notes
+        WHERE customer=? AND date>=? AND date<=?
+        ORDER BY date, cn_no
+      `)
+      .all(customer, fromDate, toDate)
+
     const txns = [
       ...invRows.map(r => ({
         date:        r.date,
@@ -409,6 +438,16 @@ function registerIpcHandlers() {
         ref_no:      r.ref   || '',
         debit:       0,
         credit:      Number(r.amount || 0),
+        type:        'credit'
+      })),
+      ...cnRows.map(r => ({
+        date:        r.date,
+        description: r.linked_invoice
+          ? `Credit Note (Ref: ${r.linked_invoice})`
+          : 'Credit Note',
+        ref_no:      r.cn_no,
+        debit:       0,
+        credit:      Number(r.total || 0),
         type:        'credit'
       }))
     ]
@@ -549,6 +588,59 @@ print("SUCCESS:" + out_path)
           py.on('close', () => { try { fs.unlinkSync(wrapperScript) } catch {} })
         } else {
           const exe = join(process.resourcesPath, 'bin', 'pdf_quotation.exe')
+          py = spawn(exe, [tmpPath], { env: getPyEnv() })
+        }
+
+        let stdout = '', stderr = ''
+        py.stdout.on('data', d => stdout += d.toString())
+        py.stderr.on('data', d => stderr += d.toString())
+        py.on('error', (err) => {
+          try { fs.unlinkSync(tmpPath) } catch {}
+          reject(new Error(err.code === 'ENOENT' ? 'Python / PDF engine not found.' : err.message))
+        })
+        py.on('close', (code) => {
+          try { fs.unlinkSync(tmpPath) } catch {}
+          if (code === 0 && stdout.includes('SUCCESS:')) {
+            const pdfPath = stdout.split('SUCCESS:')[1].trim()
+            if (shouldOpen) { shell.openPath(pdfPath) }
+            resolve({ ok: true, path: pdfPath })
+          } else {
+            reject(new Error(stderr || stdout || 'Unknown Python error'))
+          }
+        })
+      } catch (err) {
+        reject(err)
+      }
+    })
+  })
+
+  ipcMain.handle('creditNote:exportPdf', async (_, cnData, shouldOpen = true) => {
+    return new Promise((resolve, reject) => {
+      try {
+        const exportDir = resolveExportDir(getCreditNoteExportPath, 'CreditNotes')
+        cnData._export_dir = exportDir
+
+        const tmpPath = join(app.getPath('temp'), `cn_export_${Date.now()}.json`)
+        fs.writeFileSync(tmpPath, JSON.stringify(cnData))
+
+        let py
+        if (is.dev) {
+          const pyScript = join(process.cwd(), '..', 'pdf_credit_note.py')
+          const wrapperScript = join(app.getPath('temp'), `pdf_cn_wrapper_${Date.now()}.py`)
+          const wrapperContent = `
+import sys, json, os
+sys.path.append(os.path.dirname(r"${pyScript}"))
+from pdf_credit_note import generate_credit_note_pdf
+with open(r"${tmpPath}", "r", encoding="utf-8") as f:
+    data = json.load(f)
+out_path = generate_credit_note_pdf(data)
+print("SUCCESS:" + out_path)
+`
+          fs.writeFileSync(wrapperScript, wrapperContent)
+          py = spawn('python', [wrapperScript])
+          py.on('close', () => { try { fs.unlinkSync(wrapperScript) } catch {} })
+        } else {
+          const exe = join(process.resourcesPath, 'bin', 'pdf_credit_note.exe')
           py = spawn(exe, [tmpPath], { env: getPyEnv() })
         }
 

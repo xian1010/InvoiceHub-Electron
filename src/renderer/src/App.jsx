@@ -3,6 +3,8 @@ import Sidebar from './components/Sidebar'
 import Dashboard      from './pages/Dashboard'
 import Invoices       from './pages/Invoices'
 import InvoiceEditor  from './pages/InvoiceEditor'
+import CreditNotes    from './pages/CreditNotes'
+import CreditNoteEditor from './pages/CreditNoteEditor'
 import Quotations     from './pages/Quotations'
 import QuotationEditor from './pages/QuotationEditor'
 import Statement      from './pages/Statement'
@@ -26,6 +28,9 @@ export default function App() {
             <Route path="/invoices"             element={<Invoices />} />
             <Route path="/invoices/new"         element={<InvoiceEditor />} />
             <Route path="/invoices/:id"         element={<InvoiceEditor />} />
+            <Route path="/credit-notes"          element={<CreditNotes />} />
+            <Route path="/credit-notes/new"      element={<CreditNoteEditor />} />
+            <Route path="/credit-notes/:id"      element={<CreditNoteEditor />} />
             <Route path="/quotations"           element={<Quotations />} />
             <Route path="/quotations/new"       element={<QuotationEditor />} />
             <Route path="/quotations/:id"       element={<QuotationEditor />} />

@@ -202,6 +202,33 @@ function ensureTables() {
       payment_method TEXT DEFAULT 'Cash'
     );
 
+    CREATE TABLE IF NOT EXISTS credit_notes (
+      cn_no          TEXT PRIMARY KEY,
+      customer       TEXT,
+      date           TEXT,
+      total          REAL,
+      address        TEXT,
+      attn           TEXT,
+      tel            TEXT,
+      acc_code       TEXT,
+      terms          TEXT,
+      ref1           TEXT,
+      ref2           TEXT,
+      linked_invoice TEXT,
+      status         TEXT DEFAULT 'Pending'
+    );
+
+    CREATE TABLE IF NOT EXISTS credit_note_items (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      cn_no       TEXT,
+      description TEXT,
+      po_no       TEXT DEFAULT '',
+      qty         REAL,
+      uom         TEXT,
+      uprice      REAL,
+      subtotal    REAL
+    );
+
     CREATE TABLE IF NOT EXISTS email_settings (
       id           INTEGER PRIMARY KEY CHECK (id = 1),
       smtp_host    TEXT,
@@ -326,7 +353,8 @@ export function getDefaultPaths() {
   return {
     inv: path.join(getAppRoot(), 'Exports', 'Invoices'),
     quot: path.join(getAppRoot(), 'Exports', 'Quotations'),
-    stmt: path.join(getAppRoot(), 'Exports', 'Statements')
+    stmt: path.join(getAppRoot(), 'Exports', 'Statements'),
+    cn: path.join(getAppRoot(), 'Exports', 'CreditNotes')
   }
 }
 
@@ -340,7 +368,12 @@ export function getStatementExportPath() {
   return makeExportDir(p || path.join(getAppRoot(), 'Exports', 'Statements'))
 }
 
-export function saveExportPaths(invoicePath, quotationPath, statementPath) {
+export function getCreditNoteExportPath() {
+  const p = getSetting('credit_note_export_path')
+  return makeExportDir(p || path.join(getAppRoot(), 'Exports', 'CreditNotes'))
+}
+
+export function saveExportPaths(invoicePath, quotationPath, statementPath, creditNotePath) {
   const stmt = getDb().prepare(
     `INSERT INTO app_settings (key, value) VALUES (?, ?)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`
@@ -348,6 +381,9 @@ export function saveExportPaths(invoicePath, quotationPath, statementPath) {
   stmt.run('invoice_export_path',   invoicePath)
   stmt.run('quotation_export_path', quotationPath)
   stmt.run('statement_export_path', statementPath)
+  if (creditNotePath !== undefined) {
+    stmt.run('credit_note_export_path', creditNotePath)
+  }
 }
 
 // ── Dashboard stats (mirrors _DashboardFrame._get_stats) ─────────────────────
@@ -639,6 +675,96 @@ export function getNextQuotationNo() {
     }
   } catch { /* fall through */ }
   return 'QT-0001'
+}
+
+// ── Credit Note CRUD ──────────────────────────────────────────────────────────
+
+export function listCreditNotes() {
+  return getDb()
+    .prepare(
+      `SELECT cn_no, customer, date, total, status, acc_code, address, attn, tel,
+              terms, ref1, ref2, linked_invoice
+       FROM credit_notes ORDER BY rowid DESC`
+    )
+    .all()
+}
+
+export function getCreditNote(cn_no) {
+  const db = getDb()
+  const header = db
+    .prepare('SELECT * FROM credit_notes WHERE cn_no = ?')
+    .get(cn_no)
+  if (!header) return null
+  const items = db
+    .prepare('SELECT * FROM credit_note_items WHERE cn_no = ? ORDER BY id')
+    .all(cn_no)
+  return { ...header, items }
+}
+
+export function saveCreditNote(header, items) {
+  const db = getDb()
+  const upsert = db.prepare(`
+    INSERT INTO credit_notes
+      (cn_no, customer, date, total, address, attn, tel, acc_code,
+       terms, ref1, ref2, linked_invoice, status)
+    VALUES (@cn_no, @customer, @date, @total, @address, @attn, @tel,
+            @acc_code, @terms, @ref1, @ref2, @linked_invoice, @status)
+    ON CONFLICT(cn_no) DO UPDATE SET
+      customer       = excluded.customer,
+      date           = excluded.date,
+      total          = excluded.total,
+      address        = excluded.address,
+      attn           = excluded.attn,
+      tel            = excluded.tel,
+      acc_code       = excluded.acc_code,
+      terms          = excluded.terms,
+      ref1           = excluded.ref1,
+      ref2           = excluded.ref2,
+      linked_invoice = excluded.linked_invoice,
+      status         = excluded.status
+  `)
+  const insertItem = db.prepare(`
+    INSERT INTO credit_note_items
+      (cn_no, description, po_no, qty, uom, uprice, subtotal)
+    VALUES (@cn_no, @description, @po_no, @qty, @uom, @uprice, @subtotal)
+  `)
+  const run = db.transaction(() => {
+    upsert.run(header)
+    db.prepare('DELETE FROM credit_note_items WHERE cn_no = ?').run(header.cn_no)
+    for (const item of items) {
+      insertItem.run({ ...item, cn_no: header.cn_no })
+    }
+  })
+  run()
+  return { ok: true }
+}
+
+export function deleteCreditNote(cn_no) {
+  const db = getDb()
+  const run = db.transaction(() => {
+    db.prepare('DELETE FROM credit_note_items WHERE cn_no = ?').run(cn_no)
+    db.prepare('DELETE FROM credit_notes WHERE cn_no = ?').run(cn_no)
+  })
+  run()
+  return { ok: true }
+}
+
+export function updateCreditNoteStatus(cn_no, status) {
+  getDb().prepare('UPDATE credit_notes SET status = ? WHERE cn_no = ?').run(status, cn_no)
+  return { ok: true }
+}
+
+export function getNextCnNo() {
+  try {
+    const row = getDb()
+      .prepare("SELECT cn_no FROM credit_notes WHERE cn_no LIKE 'CN-%' ORDER BY rowid DESC LIMIT 1")
+      .get()
+    if (row?.cn_no) {
+      const num = parseInt(row.cn_no.split('-').pop(), 10) + 1
+      return `CN-${String(num).padStart(4, '0')}`
+    }
+  } catch { /* fall through */ }
+  return 'CN-0001'
 }
 
 // ── Email Settings ────────────────────────────────────────────────────────────
